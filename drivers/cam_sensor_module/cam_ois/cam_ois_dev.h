@@ -111,6 +111,7 @@ struct cam_ois_ctrl_t {
 	bool is_i3c_device;
 	struct cam_ois_intf_params bridge_intf;
 	struct i2c_settings_array i2c_fwinit_data;
+	struct i2c_settings_array i2c_preinit_data;
 	struct i2c_settings_array i2c_init_data;
 	struct i2c_settings_array i2c_calib_data;
 	struct i2c_settings_array i2c_mode_data;
@@ -120,7 +121,10 @@ struct cam_ois_ctrl_t {
 	char ois_name[32];
 	uint8_t ois_fw_flag;
 	uint8_t is_ois_calib;
+	uint8_t is_preinit_flag;
 	struct cam_ois_opcode opcode;
+	uint32_t (*read_ver)(struct cam_ois_ctrl_t *o_ctrl);
+	uint32_t (*dw978x_firmware_download)(struct cam_ois_ctrl_t *o_ctrl);
 };
 
 /**

@@ -13,6 +13,15 @@
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
 #include "cam_req_mgr_dev.h"
+#include "zte_camera_sensor_util.h"
+#include "cam_eeprom_dev.h"
+#include "cam_ois_dev.h"
+#include "cam_ois_dw978x.h"
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+#include "zlog_common.h"
+
+extern struct zlog_client *zlog_cam_sensor_dev_client;
+#endif
 
 extern struct completion *cam_sensor_get_i3c_completion(uint32_t index);
 
@@ -608,9 +617,20 @@ int32_t cam_sensor_update_slave_info(void *probe_info,
 			sensor_probe_info_v2->addr_type;
 		s_ctrl->sensor_probe_data_type =
 			sensor_probe_info_v2->data_type;
+		s_ctrl->module_id =
+			sensor_probe_info_v2->Lens_reserved;
 
 		memcpy(s_ctrl->sensor_name, sensor_probe_info_v2->sensor_name,
 			CAM_SENSOR_NAME_MAX_SIZE-1);
+
+		if (strcmp(s_ctrl->sensor_name, "ov64b40_tiga") == 0)
+			s_ctrl->ois_firmware_ver = 0x1040116;                  //bit16-31 ver, bit0-15 date
+
+		if (strcmp(s_ctrl->sensor_name, "imx800_crabapple") == 0)
+			s_ctrl->ois_firmware_ver = 0x6030628;                  //bit16-31 ver, bit0-15 date
+
+		if (strcmp(s_ctrl->sensor_name, "hi847_crabapple") == 0)
+			s_ctrl->ois_firmware_ver = 0x2020629;                  //bit16-31 ver, bit0-15 date			
 	}
 
 	CAM_DBG(CAM_SENSOR,
@@ -891,7 +911,9 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 {
 	int rc = 0;
 	uint32_t chipid = 0;
+	uint16_t module_id = -1;
 	struct cam_camera_slave_info *slave_info;
+	//uint32_t ois_firmware_ver = -1;
 
 	slave_info = &(s_ctrl->sensordata->slave_info);
 
@@ -904,11 +926,27 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 	if (s_ctrl->hw_no_ops)
 		return rc;
 
+	#if 0
 	rc = camera_io_dev_read(
 		&(s_ctrl->io_master_info),
 		slave_info->sensor_id_reg_addr,
 		&chipid, s_ctrl->sensor_probe_addr_type,
 		s_ctrl->sensor_probe_data_type, true);
+	#else
+	if (s_ctrl->sensor_probe_addr_type == CAMERA_SENSOR_I2C_TYPE_BYTE) {
+		rc = camera_io_dev_read(
+			&(s_ctrl->io_master_info),
+			slave_info->sensor_id_reg_addr,
+			&chipid, CAMERA_SENSOR_I2C_TYPE_BYTE,
+			CAMERA_SENSOR_I2C_TYPE_WORD, true);
+	} else {
+		rc = camera_io_dev_read(
+			&(s_ctrl->io_master_info),
+			slave_info->sensor_id_reg_addr,
+			&chipid, CAMERA_SENSOR_I2C_TYPE_WORD,
+			CAMERA_SENSOR_I2C_TYPE_WORD, true);
+	}
+	#endif
 
 	CAM_DBG(CAM_SENSOR, "%s read id: 0x%x expected id 0x%x:",
 		s_ctrl->sensor_name, chipid, slave_info->sensor_id);
@@ -919,6 +957,69 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 				slave_info->sensor_id);
 		return -ENODEV;
 	}
+
+	if (s_ctrl->module_id != 0xFFFF && s_ctrl->eeprom_pdev) {
+		struct cam_eeprom_ctrl_t *e_ctrl = NULL;
+
+		e_ctrl = platform_get_drvdata(s_ctrl->eeprom_pdev);
+
+		if (!e_ctrl) {
+			CAM_ERR(CAM_SENSOR, ": can't find the eeprom device");
+			return -EINVAL;
+		}
+		if (e_ctrl && e_ctrl->read_id) {
+			module_id = e_ctrl->read_id(s_ctrl->io_master_info.cci_client);
+			if (module_id != s_ctrl->module_id) {
+				CAM_ERR(CAM_SENSOR, ": can't find the lens id 0x%x, reserved id 0x%x"
+					, module_id, s_ctrl->module_id);
+				return -ENODEV;
+			}
+		}
+	}
+
+#if 0
+	if (s_ctrl->ois_firmware_ver != 0xFFFF && s_ctrl->ois_pdev
+		&& ((strcmp(s_ctrl->sensor_name, "ov64b40_tiga") == 0)
+			|| (strcmp(s_ctrl->sensor_name, "imx800_crabapple") == 0)
+			|| (strcmp(s_ctrl->sensor_name, "hi847_crabapple") == 0))) {
+
+		struct cam_ois_ctrl_t *o_ctrl = NULL;
+
+		o_ctrl = platform_get_drvdata(s_ctrl->ois_pdev);
+		if (!o_ctrl) {
+			CAM_ERR(CAM_SENSOR, ": can't find the ois device");
+			return -EINVAL;
+		}
+
+		if (o_ctrl && o_ctrl->read_ver) {
+			memcpy(o_ctrl->io_master_info.cci_client, s_ctrl->io_master_info.cci_client, sizeof(struct cam_sensor_cci_client));
+
+			ois_firmware_ver = o_ctrl->read_ver(o_ctrl);
+			// compare ver bit16-bit31
+			if ((ois_firmware_ver & 0xFFFF0000) < (s_ctrl->ois_firmware_ver & 0xFFFF0000)) {
+				//update ois firmware
+				CAM_ERR(CAM_SENSOR, ": need update ois firmware, read ver 0x%x, default 0x%x"
+					, ois_firmware_ver, s_ctrl->ois_firmware_ver);
+				if (strcmp(s_ctrl->sensor_name, "ov64b40_tiga") == 0)
+					snprintf(o_ctrl->ois_name, OIS_NAME_LEN, "%s", "ois_dw9781c");
+				else if (strcmp(s_ctrl->sensor_name, "imx800_crabapple") == 0)
+					snprintf(o_ctrl->ois_name, OIS_NAME_LEN, "%s", "ois_dw9784");
+				else if (strcmp(s_ctrl->sensor_name, "hi847_crabapple") == 0)
+					snprintf(o_ctrl->ois_name, OIS_NAME_LEN, "%s", "ois_dw9784_hi847");
+
+				ois_firmware_ver = o_ctrl->dw978x_firmware_download(o_ctrl);
+				if (ois_firmware_ver == s_ctrl->ois_firmware_ver)
+					CAM_ERR(CAM_SENSOR, ": success to update ois firmware, read ver 0x%x, default 0x%x"
+						, ois_firmware_ver, s_ctrl->ois_firmware_ver);
+			}else{
+				CAM_ERR(CAM_SENSOR, ": no need update ois firmware, read ver 0x%x"
+					, ois_firmware_ver);
+			}
+
+		}
+	}
+#endif
+
 	return rc;
 }
 
@@ -940,10 +1041,15 @@ int cam_sensor_stream_off(struct cam_sensor_ctrl_t *s_ctrl)
 		(s_ctrl->i2c_data.streamoff_settings.request_id == 0)) {
 		rc = cam_sensor_apply_settings(s_ctrl, 0,
 			CAM_SENSOR_PACKET_OPCODE_SENSOR_STREAMOFF);
-		if (rc < 0)
+		if (rc < 0){
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+			zlog_client_record(zlog_cam_sensor_dev_client, "[%s] stop stream failed!", s_ctrl->sensor_name);
+			zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_SENSOR_STOP_STREAM_FAIL);
+#endif
 			CAM_ERR(CAM_SENSOR,
 				"cannot apply streamoff settings for %s",
 				s_ctrl->sensor_name);
+		}
 	}
 
 	cam_sensor_release_per_frame_resource(s_ctrl);
@@ -1040,6 +1146,10 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		/* Power up and probe sensor */
 		rc = cam_sensor_power_up(s_ctrl);
 		if (rc < 0) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+						zlog_client_record(zlog_cam_sensor_dev_client, "[%s] power up failed!", s_ctrl->sensor_name);
+						zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_SENSOR_POWER_UP_FAIL);
+#endif
 			CAM_ERR(CAM_SENSOR,
 				"Power up failed for %s sensor_id: 0x%x, slave_addr: 0x%x",
 				s_ctrl->sensor_name,
@@ -1099,6 +1209,10 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 
 		rc = cam_sensor_power_down(s_ctrl);
 		if (rc < 0) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+			zlog_client_record(zlog_cam_sensor_dev_client, "[%s] power down failed!", s_ctrl->sensor_name);
+			zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_SENSOR_POWER_DOWN_FAIL);
+#endif
 			CAM_ERR(CAM_SENSOR, "Fail in %s sensor Power Down",
 				s_ctrl->sensor_name);
 			goto free_power_settings;
@@ -1110,6 +1224,7 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		 */
 		s_ctrl->is_probe_succeed = 1;
 		s_ctrl->sensor_state = CAM_SENSOR_INIT;
+		msm_sensor_enable_debugfs(s_ctrl);
 
 		CAM_INFO(CAM_SENSOR,
 				"Probe success for %s slot:%d,slave_addr:0x%x,sensor_id:0x%x",
@@ -1177,6 +1292,10 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 
 		rc = cam_sensor_power_up(s_ctrl);
 		if (rc < 0) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+			zlog_client_record(zlog_cam_sensor_dev_client, "[%s] power up failed!", s_ctrl->sensor_name);
+			zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_SENSOR_POWER_UP_FAIL);
+#endif
 			CAM_ERR(CAM_SENSOR,
 				"Sensor Power up failed for %s sensor_id:0x%x, slave_addr:0x%x",
 				s_ctrl->sensor_name,
@@ -1218,6 +1337,10 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 
 		rc = cam_sensor_power_down(s_ctrl);
 		if (rc < 0) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+			zlog_client_record(zlog_cam_sensor_dev_client, "[%s] power down failed!", s_ctrl->sensor_name);
+			zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_SENSOR_POWER_DOWN_FAIL);
+#endif
 			CAM_ERR(CAM_SENSOR,
 				"Sensor Power Down failed for %s sensor_id: 0x%x, slave_addr:0x%x",
 				s_ctrl->sensor_name,
@@ -1288,6 +1411,10 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			rc = cam_sensor_apply_settings(s_ctrl, 0,
 				CAM_SENSOR_PACKET_OPCODE_SENSOR_STREAMON);
 			if (rc < 0) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+				zlog_client_record(zlog_cam_sensor_dev_client, "[%s] start stream failed!", s_ctrl->sensor_name);
+				zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_SENSOR_START_STREAM_FAIL);
+#endif
 				CAM_ERR(CAM_SENSOR,
 					"cannot apply streamon settings for %s",
 					s_ctrl->sensor_name);
@@ -1372,6 +1499,10 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			s_ctrl->i2c_data.init_settings.request_id = -1;
 
 			if (rc < 0) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+				zlog_client_record(zlog_cam_sensor_dev_client, "[%s] sensor init failed!", s_ctrl->sensor_name);
+				zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_SENSOR_INIT_FAIL);
+#endif
 				CAM_ERR(CAM_SENSOR,
 					"%s: cannot apply init settings rc= %d",
 					s_ctrl->sensor_name, rc);
@@ -1403,6 +1534,10 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			s_ctrl->i2c_data.config_settings.request_id = -1;
 
 			if (rc < 0) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+				zlog_client_record(zlog_cam_sensor_dev_client, "[%s] sensor config resolution failed!", s_ctrl->sensor_name);
+				zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_SENSOR_SET_RESOLUTION_FAIL);
+#endif
 				CAM_ERR(CAM_SENSOR,
 					"%s: cannot apply config settings",
 					s_ctrl->sensor_name);
@@ -1426,6 +1561,10 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 					&s_ctrl->i2c_data.read_settings,
 					&s_ctrl->io_master_info);
 			if (rc < 0) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+				zlog_client_record(zlog_cam_sensor_dev_client, "[%s] sensor i2c read failed!", s_ctrl->sensor_name);
+				zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_I2C_READ_ERR);
+#endif
 				CAM_ERR(CAM_SENSOR, "%s: cannot read data: %d",
 					s_ctrl->sensor_name, rc);
 				delete_request(&s_ctrl->i2c_data.read_settings);

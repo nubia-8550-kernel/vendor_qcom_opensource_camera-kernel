@@ -363,6 +363,7 @@ struct cam_cmd_ois_info {
 	__u8                  cmd_type;
 	__u8                  ois_fw_flag;
 	__u8                  is_ois_calib;
+	__u8                  is_preinit_flag;
 	char                  ois_name[MAX_OIS_NAME_SIZE];
 	struct cam_ois_opcode opcode;
 } __attribute__((packed));
@@ -422,6 +423,7 @@ struct cam_cmd_probe_v2 {
 	__u16    pipeline_delay;
 	__u32    logical_camera_id;
 	char     sensor_name[CAM_SENSOR_NAME_MAX_SIZE];
+	__u16    Lens_reserved;
 	__u32    reserved[4];
 } __attribute__((packed));
 

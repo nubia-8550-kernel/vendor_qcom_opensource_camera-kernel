@@ -495,6 +495,30 @@ static int cam_eeprom_spi_driver_remove(struct spi_device *sdev)
 	return 0;
 }
 
+static uint32_t cam_eeprom_read_module_id(struct cam_sensor_cci_client *cci_client)
+{
+	int rc = 0;
+	struct cam_sensor_cci_client local_cci_client;
+	uint32_t reg_addr = 0x01;
+	uint32_t data = 0;
+	uint16_t slave_addr = 0xa4;
+	enum camera_sensor_i2c_type addr_type = CAMERA_SENSOR_I2C_TYPE_WORD;
+	enum camera_sensor_i2c_type data_type = CAMERA_SENSOR_I2C_TYPE_BYTE;
+
+	memcpy(&local_cci_client, cci_client, sizeof(struct cam_sensor_cci_client));
+	local_cci_client.i2c_freq_mode = I2C_FAST_PLUS_MODE;
+	local_cci_client.sid = slave_addr >> 1;
+
+	rc = cam_cci_i2c_read(&local_cci_client, reg_addr, &data, addr_type, data_type, TRUE);
+	if (rc < 0) {
+		CAM_ERR(CAM_EEPROM, "%s :%d:read reserved id fail\n", __func__, __LINE__);
+	}
+
+	CAM_DBG(CAM_EEPROM, " %s :%d:module id :%d\n", __func__, __LINE__, data);
+
+	return data;
+}
+
 static int cam_eeprom_component_bind(struct device *dev,
 	struct device *master_dev, void *data)
 {
@@ -561,6 +585,8 @@ static int cam_eeprom_component_bind(struct device *dev,
 	e_ctrl->bridge_intf.ops.apply_req = NULL;
 	platform_set_drvdata(pdev, e_ctrl);
 	e_ctrl->cam_eeprom_state = CAM_EEPROM_INIT;
+	e_ctrl->read_id = cam_eeprom_read_module_id;
+
 	CAM_DBG(CAM_EEPROM, "Component bound successfully");
 
 	g_i3c_eeprom_data[e_ctrl->soc_info.index].e_ctrl = e_ctrl;

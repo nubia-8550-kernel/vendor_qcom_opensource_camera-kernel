@@ -14,6 +14,12 @@
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
 
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+#include "zlog_common.h"
+
+extern struct zlog_client *zlog_cam_sensor_dev_client;
+#endif
+
 #define MAX_READ_SIZE  0x7FFFF
 
 /**
@@ -309,13 +315,22 @@ int32_t cam_eeprom_parse_read_memory_map(struct device_node *of_node,
 	}
 	rc = cam_eeprom_read_memory(e_ctrl, &e_ctrl->cal_data);
 	if (rc) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+		zlog_client_record(zlog_cam_sensor_dev_client, "[eeprom] read memory failed!");
+		zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_EEPROM_READ_FAIL);
+#endif
 		CAM_ERR(CAM_EEPROM, "read_eeprom_memory failed");
 		goto power_down;
 	}
 
 	rc = cam_eeprom_power_down(e_ctrl);
-	if (rc)
+	if (rc){
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+		zlog_client_record(zlog_cam_sensor_dev_client, "[eeprom] power down failed!");
+		zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_EEPROM_POWER_DOWN_FAIL);
+#endif
 		CAM_ERR(CAM_EEPROM, "failed: eeprom power down rc %d", rc);
+	}
 
 	e_ctrl->cam_eeprom_state = CAM_EEPROM_ACQUIRE;
 	return rc;
@@ -1313,6 +1328,10 @@ static int32_t cam_eeprom_pkt_parse(struct cam_eeprom_ctrl_t *e_ctrl, void *arg)
 		rc = cam_eeprom_power_up(e_ctrl,
 			&soc_private->power_info);
 		if (rc) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+			zlog_client_record(zlog_cam_sensor_dev_client, "[eeprom] power up failed!");
+			zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_EEPROM_POWER_UP_FAIL);
+#endif
 			CAM_ERR(CAM_EEPROM, "failed rc %d", rc);
 			goto memdata_free;
 		}
@@ -1320,6 +1339,10 @@ static int32_t cam_eeprom_pkt_parse(struct cam_eeprom_ctrl_t *e_ctrl, void *arg)
 		e_ctrl->cam_eeprom_state = CAM_EEPROM_CONFIG;
 		rc = cam_eeprom_read_memory(e_ctrl, &e_ctrl->cal_data);
 		if (rc) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+			zlog_client_record(zlog_cam_sensor_dev_client, "[eeprom] read memory failed!");
+			zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_EEPROM_READ_FAIL);
+#endif
 			CAM_ERR(CAM_EEPROM,
 				"read_eeprom_memory failed");
 			goto power_down;
@@ -1354,6 +1377,10 @@ static int32_t cam_eeprom_pkt_parse(struct cam_eeprom_ctrl_t *e_ctrl, void *arg)
 		rc = cam_eeprom_power_up(e_ctrl,
 			&soc_private->power_info);
 		if (rc) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+			zlog_client_record(zlog_cam_sensor_dev_client, "[eeprom] power up failed!");
+			zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_EEPROM_POWER_UP_FAIL);
+#endif
 			CAM_ERR(CAM_EEPROM, "failed power up rc %d", rc);
 			goto memdata_free;
 		}
@@ -1383,6 +1410,10 @@ static int32_t cam_eeprom_pkt_parse(struct cam_eeprom_ctrl_t *e_ctrl, void *arg)
 
 		rc = cam_eeprom_power_down(e_ctrl);
 		if (rc) {
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+			zlog_client_record(zlog_cam_sensor_dev_client, "[eeprom] power down failed!");
+			zlog_client_notify(zlog_cam_sensor_dev_client, ZLOG_CAMERA_EEPROM_POWER_DOWN_FAIL);
+#endif
 			CAM_ERR(CAM_EEPROM, "failed power down rc %d", rc);
 			goto memdata_free;
 		}

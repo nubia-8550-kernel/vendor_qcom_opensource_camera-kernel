@@ -11,6 +11,23 @@
 #include "camera_main.h"
 #include "cam_compat.h"
 
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+#include "zlog_common.h"
+
+
+static struct zlog_mod_info zlog_cam_sensor_dev = {
+	.module_no = ZLOG_MODULE_CAMERA,
+	.name = "camera",
+	.device_name = "cam_sensor_dev",
+	.ic_name = "cam_sensor_ic",
+	.module_name = "cam_module",
+	.fops = NULL,
+};
+
+struct zlog_client *zlog_cam_sensor_dev_client = NULL;
+#endif
+
+
 static struct cam_sensor_i3c_sensor_data {
 	struct cam_sensor_ctrl_t                  *s_ctrl;
 	struct completion                          probe_complete;
@@ -632,6 +649,15 @@ int cam_sensor_driver_init(void)
 		CAM_ERR(CAM_SENSOR, "i3c_driver registration failed, rc: %d", rc);
 		goto i3c_register_err;
 	}
+
+#ifdef CONFIG_VENDOR_ZTE_DEV_MONITOR_SYSTEM
+	if(NULL == zlog_cam_sensor_dev_client){
+		zlog_cam_sensor_dev_client = zlog_register_client(&zlog_cam_sensor_dev);
+		if (zlog_cam_sensor_dev_client) {
+			CAM_ERR(CAM_SENSOR, "zlog_cam register client zlog_cam_sensor_dev_client fail\n");
+		}
+	}
+#endif
 
 	return 0;
 
