@@ -67,7 +67,8 @@ LINUXINCLUDE +=                                 \
 	-I$(KERNEL_ROOT)                            \
 	$(addprefix -I,$(cam_include_dirs))         \
 	-I$(CAMERA_KERNEL_ROOT)/include/uapi/camera \
-	-I$(CAMERA_KERNEL_ROOT)/
+	-I$(CAMERA_KERNEL_ROOT)/                    \
+	-I$(KERNEL_ROOT)/drivers/vendor/common/zlog/zlog_common
 # Optional include directories
 ccflags-$(CONFIG_MSM_GLOBAL_SYNX) += -I$(KERNEL_ROOT)/drivers/media/platform/msm/synx
 
@@ -232,6 +233,7 @@ camera-$(CONFIG_SPECTRA_SENSOR) += \
 	drivers/cam_sensor_module/cam_ois/cam_ois_dev.o \
 	drivers/cam_sensor_module/cam_ois/cam_ois_core.o \
 	drivers/cam_sensor_module/cam_ois/cam_ois_soc.o \
+	drivers/cam_sensor_module/cam_ois/cam_ois_dw978x.o \
 	drivers/cam_sensor_module/cam_sensor/cam_sensor_dev.o \
 	drivers/cam_sensor_module/cam_sensor/cam_sensor_core.o \
 	drivers/cam_sensor_module/cam_sensor/cam_sensor_soc.o \
@@ -291,6 +293,14 @@ camera-$(CONFIG_SPECTRA_TFE) += \
 	drivers/cam_isp/isp_hw_mgr/isp_hw/tfe_csid_hw/cam_tfe_csid_core.o \
 	drivers/cam_isp/isp_hw_mgr/isp_hw/tfe_csid_hw/cam_tfe_csid.o \
 	drivers/cam_isp/isp_hw_mgr/cam_tfe_hw_mgr.o
+
+camera-$(CONFIG_SPECTRA_SENSOR) += \
+	drivers/cam_sensor_module/zte_io/zte_camera_sensor_util.o \
+	drivers/cam_sensor_module/zte_io/zte_camera_ois_util.o \
+	drivers/cam_sensor_module/zte_io/ois_bu63169.o \
+	drivers/cam_sensor_module/zte_io/ois_dw9781c.o \
+	drivers/cam_sensor_module/zte_io/ois_dw9784.o \
+	drivers/cam_sensor_module/zte_io/ois_dw9784_hi847.o
 
 camera-y += drivers/camera_main.o
 
